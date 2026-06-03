@@ -1,0 +1,118 @@
+{
+  "serverInfo": {
+    "name": "x402-crypto-api",
+    "version": "1.0.0"
+  },
+  "authentication": {
+    "required": false
+  },
+  "tools": [
+    {
+      "name": "btc_price",
+      "description": "Get current Bitcoin (BTC) price in USD or specified currency. Returns real-time price data from cryptocurrency exchanges.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "description": "Target currency code (default: USD)",
+            "default": "USD"
+          }
+        }
+      }
+    },
+    {
+      "name": "eth_price",
+      "description": "Get current Ethereum (ETH) price in USD or specified currency. Returns real-time price data from cryptocurrency exchanges.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "description": "Target currency code (default: USD)",
+            "default": "USD"
+          }
+        }
+      }
+    },
+    {
+      "name": "market_data",
+      "description": "Get cryptocurrency market data including top coins by market cap. Returns data for the largest cryptocurrencies by market capitalization.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Number of coins to return (default: 10, max: 100)",
+            "default": 10
+          }
+        }
+      }
+    },
+    {
+      "name": "trending_coins",
+      "description": "Get trending cryptocurrency coins. Returns coins that are currently trending based on social media activity and search volume.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Number of trending coins to return (default: 10)",
+            "default": 10
+          }
+        }
+      }
+    },
+    {
+      "name": "coin_price",
+      "description": "Get price for any supported cryptocurrency symbol. Flexible tool to look up price data for any coin by its ticker symbol.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Coin symbol (e.g., BTC, ETH, SOL, DOGE)"
+          },
+          "currency": {
+            "type": "string",
+            "description": "Target currency code (default: USD)",
+            "default": "USD"
+          }
+        },
+        "required": ["symbol"]
+      }
+    },
+    {
+      "name": "api_status",
+      "description": "Check the x402 API service status and payment requirements. Returns service health and information about x402 payment protocol.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  ],
+  "resources": [
+    {
+      "name": "price_data",
+      "description": "Cryptocurrency price data endpoint",
+      "uri": "https://spectacular-strength-production-0494.up.railway.app/api/crypto/btc/price"
+    },
+    {
+      "name": "market_data",
+      "description": "Cryptocurrency market data endpoint",
+      "uri": "https://spectacular-strength-production-0494.up.railway.app/api/crypto/market"
+    }
+  ],
+  "prompts": [
+    {
+      "name": "crypto_analysis",
+      "description": "Get a quick analysis of cryptocurrency market conditions",
+      "arguments": [
+        {
+          "name": "coin",
+          "description": "Coin to analyze (e.g., BTC, ETH)"
+        }
+      ]
+    }
+  ]
+}
