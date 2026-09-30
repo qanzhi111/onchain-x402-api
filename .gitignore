@@ -2,3 +2,12 @@ node_modules/
 .env
 *.log
 .DS_Store
+# Local settlement/replay state
+data/
+
+# Private paid downloads — NEVER commit (served only after verified payment)
+private-products/
+
+# Replay/settlement state
+data/
+*.db

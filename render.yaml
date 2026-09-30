@@ -1,0 +1,54 @@
+# Render deployment blueprint — OnChain Shadow x402 API
+# Docs: https://render.com/docs/blueprint-spec
+#
+# Free web service. NOTE: free instances spin down after ~15 min of inbound
+# inactivity and take 30-60s to cold-start on the next request. That is
+# acceptable for this API (clients will see a slow first request).
+#
+# After pushing this file to a GitHub repo, create the service in the Render
+# dashboard: New + -> Blueprint, pick the repo. Render reads this file and
+# prompts for the env var values described in `envVars`.
+
+services:
+  - type: web
+    name: onchain-shadow-x402-api
+    runtime: node
+    plan: free
+    branch: main
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: WALLET_ADDRESS
+        sync: false
+        # REQUIRED: your Base-mainnet USDC收款地址, e.g.
+        # 0x801B27e126d91D99A70cd31ffc8BC867B329023D
+      - key: PAYMENT_MODE
+        value: onchain
+        # "onchain" = no third party; server verifies/simulates/broadcasts and
+        # confirms via free public Base RPCs. Recommended for mainnet.
+        # "facilitator" = verify via FACILITATOR_URL; the public
+        # https://x402.org/facilitator is testnet-only and rejects Base
+        # mainnet, so facilitator mode requires your own hosted facilitator.
+      - key: INTERNAL_SECRET
+        generateValue: true
+        # Random shared secret for loopback-only internal calls (CROO provider).
+        # If you also run croo-provider on the same host, copy this value into
+        # the croo-provider's INTERNAL_SECRET env var.
+      - key: FACILITATOR_URL
+        sync: false
+        # OPTIONAL, only for PAYMENT_MODE=facilitator:
+        # https://your-self-hosted-facilitator.example.com/verify
+      - key: BASE_RPC_URLS
+        sync: false
+        # OPTIONAL: comma-separated Base RPC list. Defaults to
+        # https://mainnet.base.org,https://base.publicnode.com,...
+      - key: COINGECKO_API_KEY
+        sync: false
+        # OPTIONAL: higher CoinGecko rate limits
+      - key: ETHERSCAN_API_KEY
+        sync: false
+        # OPTIONAL: richer on-chain analysis endpoints

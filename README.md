@@ -1,152 +1,154 @@
 # OnChain Shadow x402 API
 
-**Paid API for AI Agents — Crypto & Web3 Security Data via x402 protocol + CROO CAP integration**
+**Paid API for AI Agents — crypto & Web3-security data plus paid PDF downloads, settled in USDC on Base via the x402 protocol.**
 
-An autonomous, pay-per-call API that provides cryptocurrency data, token security checks, and on-chain investigation reports. Built for AI agents that need Web3 data without subscriptions.
+An autonomous, pay-per-call API that provides cryptocurrency data, token security checks, on-chain investigation reports and downloadable PDF guides. Built for AI agents that need Web3 data without subscriptions.
 
-## 💰 Dual Payment Protocol
+## 💰 Payments
 
-This API supports two complementary payment protocols:
-
-| Protocol | Use Case | Settlement |
+| Protocol | Use case | Settlement |
 |----------|----------|------------|
-| **x402** | Direct HTTP API calls from any client | USDC on Base |
-| **CROO CAP** | A2A (Agent-to-Agent) commerce via CROO marketplace | USDC on Base (escrow) |
+| **x402 v1 ("exact")** | Direct HTTP calls from any client | USDC on Base mainnet (chainId 8453) |
+| **CROO CAP** | A2A commerce via the CROO marketplace | USDC on Base (escrow) |
 
-## 🔌 API Endpoints
+### Payment verification modes (`PAYMENT_MODE`)
 
-| Endpoint | Price | Description |
-|----------|-------|-------------|
-| `GET /api/crypto/price/:symbol` | $0.01 | Real-time crypto price with 24h change |
-| `GET /api/crypto/market` | $0.02 | Top 20 coins market overview |
-| `GET /api/crypto/address/:address` | $0.05 | Ethereum address analysis |
-| `GET /api/security/token/:address` | $0.05 | Token rug pull risk check |
-| `GET /api/security/contract/:address` | $0.10 | Smart contract risk analysis |
-| `GET /api/investigate/:address` | $0.25 | Full on-chain investigation report |
+The client sends a base64-encoded JSON payload in the `X-PAYMENT` header containing a **signed but not-yet-broadcast** EIP-1559 transaction that calls `USDC.transfer(payTo, amount)`.
 
-### Free Endpoints
+| Mode | How verification works | Trust assumptions |
+|------|------------------------|-------------------|
+| `onchain` *(recommended)* | The server parses the signed tx with ethers, validates chain/asset/recipient/amount/signature, **simulates it with `eth_call` against free public Base RPCs** (`mainnet.base.org`, `base.publicnode.com`, … with fallback), broadcasts it, then polls for a confirmed receipt (status = 1). | No third party; only public RPCs |
+| `facilitator` | The server POSTs `{kind:"exact", payment:{scheme:"exact", network:"base", payload:<raw header>}}` to `FACILITATOR_URL` and requires `verify.success`. | Depends on the facilitator operator |
+
+**Fail-closed:** malformed payloads, wrong chain/asset/recipient, underpayment, failed simulation, network outages, facilitator failures — all return `402 Payment Required`. Access is never granted on an error.
+
+**Important:** the free public facilitator at `https://x402.org/facilitator` is operated for **testnet development only** and does not support Base mainnet. For mainnet traffic, use `PAYMENT_MODE=onchain`, or self-host a facilitator and point `FACILITATOR_URL` at it.
+
+**Replay protection:** settled tx hashes and `(sender, nonce)` pairs are tracked in memory and persisted to `data/settled.json` when the directory is writable. A used payment can never deliver a second response.
+
+### Internal calls
+
+The CROO provider calls this API server over loopback. Such calls bypass payment **only when all** are true: the TCP peer is loopback (`127.0.0.1` / `::1`), `X-Internal-Call: true`, and `X-Internal-Secret` matches the server's `INTERNAL_SECRET`.
+
+## 🔌 API endpoints
+
+| Endpoint | Price | Atomic (USDC, 6 decimals) | Description |
+|----------|-------|---------------------------|-------------|
+| `GET /api/crypto/price/:symbol` | $0.01 | 10,000 | Real-time crypto price with 24h change |
+| `GET /api/crypto/market` | $0.02 | 20,000 | Top 20 coins market overview |
+| `GET /api/crypto/address/:address` | $0.05 | 50,000 | Address analysis |
+| `GET /api/security/token/:address` | $0.05 | 50,000 | Token rug-pull risk check |
+| `GET /api/security/contract/:address` | $0.10 | 100,000 | Smart contract risk analysis |
+| `GET /api/investigate/:address` | $0.25 | 250,000 | Full on-chain investigation report |
+
+### PDF products
+
+`GET /api/product/:productId` — same payment middleware; one payment delivers one file. PDFs live under `private-products/`, which has **no static route** and cannot be downloaded without a verified payment. Files are streamed as `application/pdf` with `Content-Disposition: attachment`.
+
+| Product id | Price | File |
+|------------|-------|------|
+| `web3-security-guide` | $5.00 (5,000,000 atomic) | Web3 Security Investigation Guide, 31 pages |
+| `ai-agent-defi-playbook` | $5.00 (5,000,000 atomic) | AI Agent DeFi Security Playbook, 19 pages |
+
+Unknown product ids return `404`.
+
+### Free endpoints
 
 | Endpoint | Description |
 |----------|-------------|
 | `GET /` | API info and endpoint listing |
 | `GET /health` | Service health check |
-| `GET /api/status` | API status and pricing |
+| `GET /api/status` | API status, mode and pricing |
 
-## 🚀 Quick Start
+## 🚀 Quick start
 
-### x402 Protocol (Direct API)
+```bash
+npm install
+cp .env.example .env      # set WALLET_ADDRESS, INTERNAL_SECRET, PAYMENT_MODE
+npm start                 # node server.js, default port 3000
+```
 
-1. **Install the x402 client:**
-   ```bash
-   npm install @anthropic-ai/x402
-   ```
+Every paid endpoint follows the same x402 flow:
 
-2. **Make a paid request:**
-   ```javascript
-   const { x402Fetch } = require('@anthropic-ai/x402');
+1. Request without payment → `402` with payment requirements (`no-store` cache headers).
+2. The x402 client signs the USDC transfer and retries with `X-PAYMENT`.
+3. The server verifies & settles (or the facilitator does) and returns the data.
 
-   const response = await x402Fetch('https://your-api-url/api/crypto/price/bitcoin', {
-     wallet: yourWallet,
-     maxAmount: 0.01
-   });
-   const data = await response.json();
-   ```
+```bash
+# 1) discover payment requirements
+curl https://your-api.example.com/api/security/token/0xTokenAddress
 
-3. **Or use curl with manual payment:**
-   ```bash
-   # First request returns 402 with payment details
-   curl https://your-api-url/api/crypto/price/bitcoin
-   
-   # After payment, include the payment receipt
-   curl -H "x-payment: <receipt>" https://your-api-url/api/crypto/price/bitcoin
-   ```
+# 2) x402-aware clients handle signing automatically, e.g. with the x402 fetch SDK
+```
 
-### CROO CAP Protocol (A2A Commerce)
+### Running the CROO provider
 
-This agent is also available on the [CROO Agent Store](https://agent.croo.network/) for agent-to-agent commerce.
+```bash
+cd croo-provider
+cp .env.example .env   # CROO_SDK_KEY and INTERNAL_SECRET (must match the API server)
+npm run croo:provider
+```
 
-1. **Install the CROO SDK:**
-   ```bash
-   npm install @croo-network/sdk
-   ```
+## ✅ Tests
 
-2. **Find and call this agent on CROO:**
-   ```javascript
-   import { CrooClient } from '@croo-network/sdk';
+```bash
+npm test                 # node --test test/*.test.js
+```
 
-   const client = new CrooClient({ apiKey: 'croo_sk_...' });
-   
-   // Discover available services
-   const services = await client.discoverServices({ tags: ['defi', 'on-chain'] });
-   
-   // Place an order
-   const order = await client.negotiateOrder({
-     serviceId: 'onchain-shadow-api',
-     input: { symbol: 'bitcoin' }
-   });
-   ```
+The suite uses an in-process HTTP **mock facilitator** and an ethers-built **mock on-chain settler** (deterministic balances, independent raw-tx parsing). It covers: missing payment → 402; forged/garbage/tampered/wrong-chain/wrong-recipient/underpaid transactions → rejected; valid payment → data; valid $5 payment → exact PDF byte stream (and no bytes without payment); replay of a settled tx and of the same `(sender, nonce)` → rejected; free endpoints → 200; internal bypass without secret/wrong secret/non-loopback → rejected (unit + end-to-end).
 
-3. **Or run as a CROO Provider yourself:**
-   ```bash
-   cd croo-provider
-   cp .env.example .env
-   # Edit .env with your CROO SDK key
-   npm run croo:provider
-   ```
+## 🌐 Deploy free on Render
+
+The repo includes `render.yaml` (web service, free plan, `node server.js`, health check `/health`).
+
+**Steps — parts in the Render dashboard must be done by you in a browser:**
+
+1. Push the repo (including `render.yaml`, `private-products/`) to a GitHub repository.
+2. Open <https://dashboard.render.com/> and log in (sign up with GitHub). **(you)**
+3. **New + → Blueprint**, select the repository. Render reads `render.yaml`. **(you)**
+4. Render prompts for the blueprint env vars:
+   - `WALLET_ADDRESS` — your Base USDC recipient address.
+   - `PAYMENT_MODE` — prefilled `onchain` (recommended).
+   - `INTERNAL_SECRET` — Render generates a random value automatically.
+   - leave `FACILITATOR_URL`, `BASE_RPC_URLS`, `COINGECKO_API_KEY`, `ETHERSCAN_API_KEY` blank unless you need them. **(you)**
+5. Click **Apply**; Render builds (`npm install`) and starts the service. After deploy, verify `https://<your-service>.onrender.com/health`. **(you)**
+6. (Optional) If running `croo-provider` against the deployed/co-located API, set that process's `INTERNAL_SECRET` to the same value.
+
+Caveats: free instances sleep after ~15 min of inactivity (cold start 30–60s on the next request); set the same env vars manually if you create a plain **Web Service** instead of a Blueprint.
+
+## 🔧 Configuration
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `WALLET_ADDRESS` | Yes | — | USDC recipient wallet on Base |
+| `PAYMENT_MODE` | No | `facilitator` | `onchain` or `facilitator` |
+| `INTERNAL_SECRET` | For internal bypass | random per process | Shared secret for loopback internal callers |
+| `FACILITATOR_URL` | Facilitator mode | `https://x402.org/facilitator/verify` (testnet-only) | Facilitator `/verify` endpoint |
+| `BASE_RPC_URLS` | No | public Base RPCs | Comma-separated RPC fallback list |
+| `PORT` | No | 3000 | Server port (set automatically by Render) |
+| `COINGECKO_API_KEY` | No | — | Higher CoinGecko rate limits |
+| `ETHERSCAN_API_KEY` | No | — | Richer on-chain analysis |
+| `CROO_SDK_KEY` | CROO provider | — | Key from agent.croo.network |
+| `X402_API_BASE` | CROO provider | `http://localhost:3000` | Base URL for internal calls |
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────┐     x402 (HTTP 402)     ┌──────────────────┐
-│  AI Agent   │ ──────────────────────► │  x402-crypto-api │
-│  (Client)   │     USDC on Base        │  (Express server) │
-└─────────────┘                         └────────┬─────────┘
-                                                 │
-                                                 │ Internal API calls
-                                                 ▼
-┌─────────────┐   CROO CAP (WebSocket)   ┌──────────────────┐
-│  AI Agent   │ ──────────────────────►  │  CROO Provider   │
-│  (Requester)│   USDC Escrow on Base    │  (croo-provider) │
-└─────────────┘                          └──────────────────┘
+x402-api/
+├── server.js                 # Express app + free/paid/PDF routes (node server.js)
+├── lib/
+│   ├── config.js             # Chain/asset/pricing constants, USD -> atomic
+│   ├── middleware.js         # x402 middleware, 402 builder, internal-auth rules
+│   ├── payment-parser.js     # Structural + signature validation of X-PAYMENT
+│   ├── onchain.js            # RPC simulate/broadcast/receipt (multi-node fallback)
+│   ├── facilitator.js        # External facilitator /verify client
+│   └── replay.js             # Settled hash/nonce guard, persisted JSON
+├── private-products/         # Paid PDFs — NO express.static points here
+│   ├── web3-security-guide.pdf
+│   └── ai-agent-defi-playbook.pdf
+├── croo-provider/            # CROO marketplace wrapper (loopback internal client)
+└── test/                     # node:test suite with mock facilitator + mock chain
 ```
-
-The CROO Provider wraps the x402 API endpoints as CROO services. When another agent requests a service through the CROO marketplace, the provider:
-1. Accepts the negotiation
-2. Receives payment in escrow
-3. Calls the internal x402 API (bypassing x402 payment)
-4. Delivers the result with proof of delivery
-5. Escrow settles automatically
-
-## 🔧 Configuration
-
-### Environment Variables
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `WALLET_ADDRESS` | Yes | - | USDC recipient wallet on Base |
-| `PORT` | No | 3000 | Server port |
-| `COINGECKO_API_KEY` | No | - | CoinGecko API key for higher rate limits |
-| `ETHERSCAN_API_KEY` | No | - | Etherscan API key for on-chain analysis |
-| `CROO_API_URL` | CROO only | https://api.croo.network | CROO API endpoint |
-| `CROO_WS_URL` | CROO only | wss://api.croo.network/ws | CROO WebSocket endpoint |
-| `CROO_SDK_KEY` | CROO only | - | API key from agent.croo.network |
-| `X402_API_BASE` | CROO only | http://localhost:3000 | Base URL for internal API calls |
-
-## 🏆 CROO Agent Hackathon
-
-This project is submitted to the [CROO Agent Hackathon](https://dorahacks.io/hackathon/croo-hackathon) under:
-- **DeFi / On-chain Ops Agents** — monitoring, alerts, on-chain execution
-- **Developer Tooling Agents** — tools for other CAP builders
-
-### Judging Alignment
-
-| Criteria | How We Address It |
-|----------|-------------------|
-| CAP Integration Quality (25%) | Full WebSocket provider with auto-negotiate, deliver, and settlement |
-| A2A Composability (20%) | Other agents can compose our services as building blocks |
-| Business Viability (20%) | Real pricing, real API, real use case (crypto data as a service) |
-| Innovation & Creativity (20%) | Dual-protocol approach (x402 + CAP), cross-protocol agent |
-| Code Quality & Docs (15%) | Clean architecture, typed schemas, comprehensive README |
 
 ## 📄 License
 

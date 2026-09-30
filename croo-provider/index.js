@@ -268,7 +268,8 @@ class CrooProvider {
     let url = `${X402_API_BASE}${service.endpoint}`;
     const options = {
       headers: {
-        'x-internal-call': 'true',  // Signal internal call to bypass x402 payment
+        'x-internal-call': 'true', // Signal internal call to bypass x402 payment
+        'x-internal-secret': INTERNAL_SECRET || '', // authorized only over loopback
         'Content-Type': 'application/json'
       }
     };
