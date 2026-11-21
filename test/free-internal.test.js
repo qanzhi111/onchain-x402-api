@@ -115,7 +115,7 @@ test('internal bypass works end-to-end via loopback HTTP with secret', async () 
   const app = createApp(makeDeps());
   const { server, url } = await startTestServer(app);
   try {
-    const res = await fetch(`${url}/api/security/contract/0x1234567890123456789012345678901234567890`, {
+    const res = await fetch(`${url}/api/security/token/0x1234567890123456789012345678901234567890`, {
       headers: {
         'x-internal-call': 'true',
         'x-internal-secret': 'test-secret-value'
@@ -131,7 +131,7 @@ test('internal bypass end-to-end rejected with wrong secret over HTTP', async ()
   const app = createApp(makeDeps());
   const { server, url } = await startTestServer(app);
   try {
-    const res = await fetch(`${url}/api/security/contract/0x12345678901234789012345678901234567890`, {
+    const res = await fetch(`${url}/api/crypto/price/btc`, {
       headers: { 'x-internal-call': 'true', 'x-internal-secret': 'nope' }
     });
     assert.equal(res.status, 402);

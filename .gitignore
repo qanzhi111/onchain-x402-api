@@ -11,3 +11,4 @@ private-products/
 # Replay/settlement state
 data/
 *.db
+.npm-cache/

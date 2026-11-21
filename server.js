@@ -99,6 +99,148 @@ for (const p of Object.values(PRODUCTS)) {
   p.atomic = usdToAtomic(p.usd).toString();
 }
 
+// ============ Free token-safety helpers (GoPlus proxy) ============
+
+const tokenSafetyCache = new Map(); // key -> { data, ts }
+const tokenSafetyRateLimit = new Map(); // ip -> { count, windowStart }
+const TOKEN_SAFETY_CACHE_TTL = 30_000; // 30 seconds
+const TOKEN_SAFETY_RATE_LIMIT = 20; // per minute per IP
+
+const CHAIN_MAP = { base: '8453', eth: '1', bsc: '56' };
+
+function checkRateLimit(ip) {
+  const now = Date.now();
+  const entry = tokenSafetyRateLimit.get(ip);
+  if (!entry || now - entry.windowStart > 60_000) {
+    tokenSafetyRateLimit.set(ip, { count: 1, windowStart: now });
+    return true;
+  }
+  if (entry.count >= TOKEN_SAFETY_RATE_LIMIT) return false;
+  entry.count++;
+  return true;
+}
+
+function hexToFloat(val) {
+  if (val == null || val === '' || val === 'null' || val === 'undefined') return 0;
+  const n = parseFloat(val);
+  return isNaN(n) ? 0 : n;
+}
+
+function translateGoPlus(data, address, chain) {
+  const d = data || {};
+  const flags = [];
+  let dangerCount = 0;
+  let warnCount = 0;
+
+  // Honeypot — the #1 fear
+  if (d.is_honeypot === '1') {
+    flags.push({ level: 'danger', label: '貔貅盘', detail: '代币无法正常卖出' });
+    dangerCount++;
+  }
+  // Owner can change balance directly
+  if (d.owner_change_balance === '1') {
+    flags.push({ level: 'danger', label: '可改余额', detail: '管理员可以直接修改你的代币余额' });
+    dangerCount++;
+  }
+  // Hidden owner
+  if (d.hidden_owner === '1') {
+    flags.push({ level: 'danger', label: '隐藏管理员', detail: '存在未公开的控制人' });
+    dangerCount++;
+  }
+  // Can take back ownership
+  if (d.can_take_back_ownership === '1') {
+    flags.push({ level: 'danger', label: '可夺回权限', detail: '管理员即使放弃权限也能重新夺回控制' });
+    dangerCount++;
+  }
+
+  // Transfer pausable
+  if (d.transfer_pausable === '1') {
+    flags.push({ level: 'warn', label: '可暂停转账', detail: '管理员可以冻结所有转账操作' });
+    warnCount++;
+  }
+  // Not open source
+  if (d.is_open_source === '0') {
+    flags.push({ level: 'warn', label: '未开源', detail: '合约代码未公开验证，风险较高' });
+    warnCount++;
+  }
+  // Proxy contract
+  if (d.is_proxy === '1') {
+    flags.push({ level: 'warn', label: '代理合约', detail: '合约逻辑可被管理员更换' });
+    warnCount++;
+  }
+  // Blacklist
+  if (d.is_blacklisted === '1') {
+    flags.push({ level: 'warn', label: '有黑名单', detail: '管理员可以将地址加入黑名单阻止交易' });
+    warnCount++;
+  }
+  // Whitelist (often paired with blacklist)
+  if (d.is_whitelisted === '1') {
+    flags.push({ level: 'warn', label: '有白名单', detail: '交易可能需要先被加入白名单' });
+    warnCount++;
+  }
+  // Buy tax
+  const buyTax = hexToFloat(d.buy_tax) * 100;
+  if (buyTax > 5) {
+    flags.push({ level: 'warn', label: `买入税 ${buyTax.toFixed(1)}%`, detail: `每笔买入被扣除 ${buyTax.toFixed(1)}% 手续费` });
+    warnCount++;
+  }
+  // Sell tax
+  const sellTax = hexToFloat(d.sell_tax) * 100;
+  if (sellTax > 5) {
+    flags.push({ level: 'warn', label: `卖出税 ${sellTax.toFixed(1)}%`, detail: `每笔卖出被扣除 ${sellTax.toFixed(1)}% 手续费` });
+    warnCount++;
+  }
+
+  // Positive signals
+  if (d.is_open_source === '1') {
+    flags.push({ level: 'ok', label: '开源合约', detail: '代码已公开验证' });
+  }
+  if (d.is_honeypot === '0') {
+    flags.push({ level: 'ok', label: '非貔貅盘', detail: '可以正常买卖' });
+  }
+  if (d.is_blacklisted !== '1') {
+    flags.push({ level: 'ok', label: '无黑名单', detail: '未发现黑名单机制' });
+  }
+
+  // Verdict
+  let verdict, headline;
+  if (dangerCount >= 2) {
+    verdict = 'high_risk';
+    headline = '⛔ 高风险：存在多个严重安全问题，极有可能是骗局';
+  } else if (dangerCount >= 1) {
+    verdict = 'high_risk';
+    headline = '⛔ 高风险：发现严重安全隐患，请极度谨慎';
+  } else if (warnCount >= 3) {
+    verdict = 'caution';
+    headline = '⚠️ 需谨慎：存在多个中等风险信号';
+  } else if (warnCount >= 1) {
+    verdict = 'caution';
+    headline = '⚠️ 需注意：存在一些风险因素，建议谨慎操作';
+  } else {
+    verdict = 'low_risk';
+    headline = '✅ 低风险：未发现明显安全问题';
+  }
+
+  // Score (0=safest, higher=more risky)
+  const score = Math.min(100, dangerCount * 30 + warnCount * 10);
+
+  return {
+    ok: true,
+    address,
+    chain,
+    verdict,
+    headline,
+    flags,
+    score,
+    raw_source: 'GoPlus',
+    paid_upgrade: {
+      full_report: { endpoint: '/api/security/token/:address', price_usd: '0.05' },
+      pdf: { endpoint: '/api/product/web3-security-guide', price_usd: '5' }
+    },
+    timestamp: Date.now()
+  };
+}
+
 // ============ App factory (exported so tests can inject dependencies) ============
 
 function createApp(deps = {}) {
@@ -129,8 +271,8 @@ function createApp(deps = {}) {
         '/api/crypto/market': '$0.02 - Market overview (top coins)',
         '/api/crypto/address/:address': '$0.05 - Address analysis',
         '/api/security/token/:address': '$0.05 - Token security check',
-        '/api/security/contract/:address': '$0.10 - Contract risk analysis',
-        '/api/investigate/:address': '$0.25 - Full on-chain investigation'
+        '/api/security/contract/:address': '$0.10 - Contract risk analysis (temporarily offline)',
+        '/api/investigate/:address': '$0.25 - Full on-chain investigation (temporarily offline)'
       },
       paid_products: Object.fromEntries(
         Object.values(d.products).map((p) => [
@@ -140,7 +282,8 @@ function createApp(deps = {}) {
       ),
       free_endpoints: {
         '/health': 'Service health check',
-        '/api/status': 'API status and pricing'
+        '/api/status': 'API status and pricing',
+        '/api/free/token-safety/:address': 'Free token safety check (powered by GoPlus)'
       },
       payment: 'x402 protocol v1 - USDC on Base',
       network: `${NETWORK_NAME} (chainId ${CHAIN_ID})`,
@@ -164,13 +307,80 @@ function createApp(deps = {}) {
         market_overview: '$0.02/call',
         address_analysis: '$0.05/call',
         token_security: '$0.05/call',
-        contract_risk: '$0.10/call',
-        full_investigation: '$0.25/call'
+        contract_risk: '$0.10/call (temporarily offline)',
+        full_investigation: '$0.25/call (temporarily offline)'
       },
       products: Object.fromEntries(
         Object.values(d.products).map((p) => [p.id, { price: `$${p.usd}`, name: p.name }])
       )
     });
+  });
+
+  // ---------- Free token-safety endpoint (no paywall) ----------
+  app.get('/api/free/token-safety/:address', async (req, res) => {
+    try {
+      const address = req.params.address;
+      // Validate hex address
+      if (!/^0x[0-9a-fA-F]{40}$/.test(address)) {
+        return res.status(400).json({ ok: false, reason: 'invalid_address', message: 'Address must be a valid 42-character hex string (0x + 40 hex chars)' });
+      }
+      // Rate limit
+      const ip = req.ip || req.socket.remoteAddress || 'unknown';
+      if (!checkRateLimit(ip)) {
+        return res.status(429).json({ ok: false, reason: 'rate_limited', message: 'Too many requests. Limit: 20 per minute per IP.' });
+      }
+      // Chain parameter
+      const chain = (req.query.chain || 'base').toLowerCase();
+      const chainId = CHAIN_MAP[chain];
+      if (!chainId) {
+        return res.status(400).json({ ok: false, reason: 'unsupported_chain', message: `Supported chains: ${Object.keys(CHAIN_MAP).join(', ')}` });
+      }
+      // Cache check
+      const cacheKey = `${chain}:${address.toLowerCase()}`;
+      const cached = tokenSafetyCache.get(cacheKey);
+      if (cached && Date.now() - cached.ts < TOKEN_SAFETY_CACHE_TTL) {
+        return res.json(cached.data);
+      }
+      // Fetch GoPlus with 8s timeout
+      let tokenData;
+      try {
+        const goPlusUrl = `https://api.gopluslabs.io/api/v1/token_security/${chainId}?contract_addresses=${address}`;
+        const fetchPromise = fetch(goPlusUrl);
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), 8000)
+        );
+        const response = await Promise.race([fetchPromise, timeoutPromise]);
+        const json = await response.json();
+        tokenData = json && json.result && json.result[address.toLowerCase()];
+      } catch (_fetchErr) {
+        // Upstream failure — return graceful error (never throw)
+        return res.json({ ok: false, reason: 'upstream_unavailable', message: 'GoPlus API is temporarily unavailable', address, chain });
+      }
+      if (!tokenData) {
+        return res.json({ ok: false, reason: 'no_data', message: 'Token not found in GoPlus database', address, chain });
+      }
+      const translated = translateGoPlus(tokenData, address, chain);
+      // Cache successful result
+      tokenSafetyCache.set(cacheKey, { data: translated, ts: Date.now() });
+      return res.json(translated);
+    } catch (_outerErr) {
+      return res.json({ ok: false, reason: 'internal_error', message: 'An unexpected error occurred' });
+    }
+  });
+
+  // ---------- Temporarily offline intercepts (before paywall) ----------
+  // These endpoints currently return empty/placeholder data.
+  // Block BEFORE paywall so users don't pay for nothing.
+  const OFFLINE_BODY = {
+    error: 'service_unavailable',
+    message: 'This endpoint is temporarily offline while we rebuild it with real data. No payment required.',
+    alternative: 'Use the free /api/free/token-safety/:address for token checks'
+  };
+  app.get('/api/security/contract/:address', (req, res) => {
+    res.status(503).json(OFFLINE_BODY);
+  });
+  app.get('/api/investigate/:address', (req, res) => {
+    res.status(503).json(OFFLINE_BODY);
   });
 
   // ---------- Paid JSON endpoints ----------
@@ -451,4 +661,4 @@ if (require.main === module) {
   })();
 }
 
-module.exports = { createApp, PRODUCTS, paymentDeps };
+module.exports = { createApp, PRODUCTS, paymentDeps, tokenSafetyRateLimit, tokenSafetyCache };
