@@ -1,0 +1,21 @@
+name: keepalive
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake the free instance and report status
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 https://onchain-shadow-x402-api.onrender.com/health || true)
+          echo "health: $code"
+          sleep 5
+          code2=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 https://onchain-shadow-x402-api.onrender.com/api/free/token-safety/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 || true)
+          echo "free route: $code2"
