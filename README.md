@@ -30,6 +30,25 @@ The client sends a base64-encoded JSON payload in the `X-PAYMENT` header contain
 
 The CROO provider calls this API server over loopback. Such calls bypass payment **only when all** are true: the TCP peer is loopback (`127.0.0.1` / `::1`), `X-Internal-Call: true`, and `X-Internal-Secret` matches the server's `INTERNAL_SECRET`.
 
+## 🤖 For AI agents (no account, no API key)
+
+The payment is the credential. An agent calls a paid route, receives `402` with the
+requirements, signs a USDC transfer on Base, and retries with the `X-PAYMENT` header.
+
+| Step | What the agent sees |
+|---|---|
+| `GET /api/security/token/:address` with no header | `402` + JSON describing asset, amount, recipient, chain |
+| Retry with a valid `X-PAYMENT` | `200` + the data |
+
+Prices are per call, from $0.01 (price lookup) to $0.25 (full investigation report).
+Free routes under `/api/free/*` need no payment, so an agent can verify reachability
+before spending anything.
+
+Working client (Node, ~25 lines): [`examples/agent-fetch.js`](examples/agent-fetch.js)
+
+Anything that can make an HTTPS request and sign a transaction can use this —
+no SDK is required, the header format is documented in `server.js`.
+
 ## 🔌 API endpoints
 
 | Endpoint | Price | Atomic (USDC, 6 decimals) | Description |
