@@ -57,8 +57,8 @@ no SDK is required, the header format is documented in `server.js`.
 | `GET /api/crypto/market` | $0.02 | 20,000 | Top 20 coins market overview |
 | `GET /api/crypto/address/:address` | $0.05 | 50,000 | Address analysis |
 | `GET /api/security/token/:address` | $0.05 | 50,000 | Token rug-pull risk check |
-| `GET /api/security/contract/:address` | $0.10 | 100,000 | Smart contract risk analysis |
-| `GET /api/investigate/:address` | $0.25 | 250,000 | Full on-chain investigation report |
+| `GET /api/security/contract/:address` | — coming soon | — | Smart contract risk analysis |
+| `GET /api/investigate/:address` | — coming soon | — | Full on-chain investigation report |
 
 ### PDF products
 
@@ -70,6 +70,12 @@ no SDK is required, the header format is documented in `server.js`.
 | `ai-agent-defi-playbook` | $5.00 (5,000,000 atomic) | AI Agent DeFi Security Playbook, 19 pages |
 
 Unknown product ids return `404`.
+
+> **Two endpoints are not live yet.** `/api/security/contract/:address` and
+> `/api/investigate/:address` return `503` with `{"error":"service_unavailable"}` while they
+> are rebuilt on real data. **No payment is required and nothing is charged** — they are listed
+> for completeness, not for sale. Four endpoints are live and payable today: `/api/crypto/price/:symbol`,
+> `/api/crypto/market`, `/api/crypto/address/:address`, `/api/security/token/:address`.
 
 ### Free endpoints
 
