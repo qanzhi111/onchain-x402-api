@@ -35,6 +35,7 @@ const { OnchainSettler } = require('./lib/onchain');
 const { FacilitatorClient } = require('./lib/facilitator');
 const { ReplayGuard } = require('./lib/replay');
 const { x402PaymentRequired } = require('./lib/middleware');
+const { hskGate, CONTRACT: HSK_CONTRACT, RPC: HSK_RPC, EXPECTED_CHAIN_ID } = require('./lib/hsk');
 
 // ============ Configuration from environment ============
 
@@ -258,6 +259,21 @@ function createApp(deps = {}) {
   };
 
   const paywall = (cfg) => x402PaymentRequired({ ...cfg, payTo: d.payTo }, d);
+  // 带 X-HSK-PAYMENT 时走 HSK 链校验，否则原样走 x402
+  const paywallOrHsk = (cfg) => (req, res, next) => {
+    if (req.header('X-HSK-PAYMENT')) return hskGate(cfg)(req, res, next);
+    return paywall(cfg)(req, res, next);
+  };
+  app.get('/api/hsk/status', async (req, res) => {
+    res.json({
+      network: `HashKey Chain (${EXPECTED_CHAIN_ID})`,
+      rpc: HSK_RPC,
+      contract: HSK_CONTRACT || null,
+      how_to_pay: 'Send pay(nonce, keccak256(endpointPath)) with the required amount, then retry with header X-HSK-PAYMENT: <txHash>',
+      endpoints_bound: '/api/crypto/price, /api/crypto/market, /api/crypto/address, /api/security/token',
+    });
+  });
+
 
   // ---------- Free endpoints ----------
 
@@ -388,7 +404,7 @@ function createApp(deps = {}) {
   // 1. Crypto Price - $0.01
   app.get(
     '/api/crypto/price/:symbol',
-    paywall({ usd: ENDPOINT_PRICES.cryptoPrice.usd, atomic: ENDPOINT_PRICES.cryptoPrice.atomic, description: ENDPOINT_PRICES.cryptoPrice.description }),
+    paywallOrHsk({ usd: ENDPOINT_PRICES.cryptoPrice.usd, atomic: ENDPOINT_PRICES.cryptoPrice.atomic, description: ENDPOINT_PRICES.cryptoPrice.description }),
     async (req, res) => {
       try {
         const symbol = req.params.symbol.toLowerCase();
@@ -415,7 +431,7 @@ function createApp(deps = {}) {
   // 2. Market Overview - $0.02
   app.get(
     '/api/crypto/market',
-    paywall({ usd: ENDPOINT_PRICES.market.usd, atomic: ENDPOINT_PRICES.market.atomic, description: ENDPOINT_PRICES.market.description }),
+    paywallOrHsk({ usd: ENDPOINT_PRICES.market.usd, atomic: ENDPOINT_PRICES.market.atomic, description: ENDPOINT_PRICES.market.description }),
     async (req, res) => {
       try {
         const headers = COINGECKO_API_KEY ? { 'x-cg-demo-api-key': COINGECKO_API_KEY } : {};
@@ -446,7 +462,7 @@ function createApp(deps = {}) {
   // 3. Address Analysis - $0.05
   app.get(
     '/api/crypto/address/:address',
-    paywall({ usd: ENDPOINT_PRICES.address.usd, atomic: ENDPOINT_PRICES.address.atomic, description: ENDPOINT_PRICES.address.description }),
+    paywallOrHsk({ usd: ENDPOINT_PRICES.address.usd, atomic: ENDPOINT_PRICES.address.atomic, description: ENDPOINT_PRICES.address.description }),
     async (req, res) => {
       try {
         const address = req.params.address;
@@ -486,7 +502,7 @@ function createApp(deps = {}) {
   // 4. Token Security Check - $0.05
   app.get(
     '/api/security/token/:address',
-    paywall({ usd: ENDPOINT_PRICES.tokenSecurity.usd, atomic: ENDPOINT_PRICES.tokenSecurity.atomic, description: ENDPOINT_PRICES.tokenSecurity.description }),
+    paywallOrHsk({ usd: ENDPOINT_PRICES.tokenSecurity.usd, atomic: ENDPOINT_PRICES.tokenSecurity.atomic, description: ENDPOINT_PRICES.tokenSecurity.description }),
     async (req, res) => {
       try {
         const address = req.params.address;
@@ -545,7 +561,7 @@ function createApp(deps = {}) {
   // 5. Contract Risk Analysis - $0.10
   app.get(
     '/api/security/contract/:address',
-    paywall({ usd: ENDPOINT_PRICES.contractSecurity.usd, atomic: ENDPOINT_PRICES.contractSecurity.atomic, description: ENDPOINT_PRICES.contractSecurity.description }),
+    paywallOrHsk({ usd: ENDPOINT_PRICES.contractSecurity.usd, atomic: ENDPOINT_PRICES.contractSecurity.atomic, description: ENDPOINT_PRICES.contractSecurity.description }),
     async (req, res) => {
       try {
         const address = req.params.address;
@@ -565,7 +581,7 @@ function createApp(deps = {}) {
   // 6. Full Investigation - $0.25
   app.get(
     '/api/investigate/:address',
-    paywall({ usd: ENDPOINT_PRICES.investigate.usd, atomic: ENDPOINT_PRICES.investigate.atomic, description: ENDPOINT_PRICES.investigate.description }),
+    paywallOrHsk({ usd: ENDPOINT_PRICES.investigate.usd, atomic: ENDPOINT_PRICES.investigate.atomic, description: ENDPOINT_PRICES.investigate.description }),
     async (req, res) => {
       try {
         const address = req.params.address;
