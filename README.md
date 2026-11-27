@@ -49,6 +49,27 @@ Working client (Node, ~25 lines): [`examples/agent-fetch.js`](examples/agent-fet
 Anything that can make an HTTPS request and sign a transaction can use this —
 no SDK is required, the header format is documented in `server.js`.
 
+## ⛓ HSK chain payments (HashKey Chain)
+
+The same endpoints accept payment on **HashKey Chain** as well as Base. An agent pays
+`PaymentLedger.pay(nonce, endpointId)` in HSK, then retries the API call with
+`X-HSK-PAYMENT: <txHash>`. The server reads the `Paid` event on chain and checks
+contract, endpoint binding, amount and replay before returning data.
+
+| Item | Value |
+|---|---|
+| Network | HashKey Chain **testnet, chainId 133** (mainnet 177 for production) |
+| RPC | `https://testnet.hsk.xyz` |
+| Contract | `0x7d4F1d2d386C6982dc3262cB2dF6c1C5d12e642D` |
+| Source | [`contracts/PaymentLedger.sol`](contracts/PaymentLedger.sol) |
+| Status route | [`/api/hsk/status`](https://api.pixshrinks.com/api/hsk/status) |
+
+`endpointId` is `keccak256("<route path without params>")`, e.g.
+`keccak256("/api/security/token")` for `/api/security/token/:address`.
+
+Verified end to end on testnet: a 0.05 HSK payment returns real token-risk data (HTTP 200),
+and replaying the same transaction returns `402 tx_already_used`.
+
 ## 🔌 API endpoints
 
 | Endpoint | Price | Atomic (USDC, 6 decimals) | Description |
