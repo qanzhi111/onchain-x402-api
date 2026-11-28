@@ -1,21 +1,27 @@
 name: keepalive
 
+# Render 免费实例 15 分钟无请求会休眠，休眠后第一次请求要 30~60 秒。
+# x402 目录的监控等不了这么久，会把服务判成「没有有效的 402」。
+# 这里每 10 分钟打一次，保持实例常热。
+
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: '*/10 * * * *'
   workflow_dispatch:
-
-permissions:
-  contents: read
 
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Wake the free instance and report status
+      - name: Warm the API
         run: |
-          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 https://onchain-shadow-x402-api.onrender.com/health || true)
-          echo "health: $code"
-          sleep 5
-          code2=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 https://onchain-shadow-x402-api.onrender.com/api/free/token-safety/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 || true)
-          echo "free route: $code2"
+          set +e
+          echo "== health =="
+          curl -sS --max-time 90 -o /dev/null -w "health %{http_code} in %{time_total}s\n" \
+            https://api.pixshrinks.com/health
+          echo "== paid route (expect 402) =="
+          curl -sS --max-time 90 -o /dev/null -w "paid %{http_code} in %{time_total}s\n" \
+            https://api.pixshrinks.com/api/crypto/market
+          echo "== status =="
+          curl -sS --max-time 90 -o /dev/null -w "status %{http_code} in %{time_total}s\n" \
+            https://api.pixshrinks.com/api/hsk/status
